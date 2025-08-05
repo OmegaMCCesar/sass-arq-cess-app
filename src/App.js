@@ -149,6 +149,7 @@ export default function App() {
       </form>
 
       {baches.length > 0 && (
+        <div className={styles.tableWrapper}>
         <table className={styles.table}>
           <thead>
             <tr>
@@ -183,6 +184,7 @@ export default function App() {
             </tr>
           </tfoot>
         </table>
+        </div>
       )}
     </div>
   );
