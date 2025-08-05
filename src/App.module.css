@@ -47,3 +47,17 @@ input, select {
   padding: 1rem;
   border-radius: 4px;
 }
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 2rem;
+}
+.table th, .table td {
+  border: 1px solid #ccc;
+  padding: 0.4rem;
+  text-align: center;
+}
+.table tfoot td {
+  font-weight: bold;
+  background-color: #eaeaea;
+}
