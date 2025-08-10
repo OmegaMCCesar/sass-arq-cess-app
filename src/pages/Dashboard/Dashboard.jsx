@@ -1,30 +1,57 @@
+// src/pages/Dashboard/Dashboard.jsx
 import React from "react";
-import { useAuth } from "../../contexts/AuthContext";
-import Calculadora from "../../components/Calculadora";
+import { Link } from "react-router-dom";
+import { useAuth } from "../../hooks/useAuth";          // <-- usa el hook nuevo
 import styles from "../../styles/Dashboard.module.css";
-import { auth } from "../../lib/firebaseConfig"; // importación estática
-import { signOut } from "firebase/auth";
 
 export default function Dashboard() {
-  const { user, role } = useAuth();
+  const { user, role, signOut } = useAuth();
 
-  const handleLogout = () => {
-    signOut(auth).catch(error => {
-      console.error("Error cerrando sesión:", error);
-    });
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (e) {
+      console.error("Error al cerrar sesión:", e);
+    }
   };
 
   return (
-    <div>
-      <nav className={styles.navbar}>
-        <div className={styles.brand}>SaaS Bacheo</div>
-        <div className={styles.userInfo}>
-          <span>{user?.email} ({role})</span>
-          <button onClick={handleLogout} className={styles.logoutButton}>Cerrar sesión</button>
+    <div className={styles.wrapper}>
+      <header className={styles.header}>
+        <div>
+          <h1 className={styles.title}>Dashboard</h1>
+          <p className={styles.subtitle}>
+            Bienvenido{user?.email ? `, ${user.email}` : ""}. Rol: <b>{role || "…"}</b>
+          </p>
         </div>
-      </nav>
+      </header>
+
       <main className={styles.main}>
-        <Calculadora />
+        <div className={styles.grid}>
+          <Link to="/calculadora" className={styles.card}>
+            <h3>Calculadora</h3>
+            <p>Herramientas de cálculo. (No se muestra en inicio)</p>
+          </Link>
+
+          <Link to="/reportes" className={styles.card}>
+            <h3>Reportes</h3>
+            <p>Consulta y exporta tus reportes.</p>
+          </Link>
+
+          {["residente","admin","superadmin"].includes(role) && (
+            <Link to="/cuadrillas" className={styles.card}>
+              <h3>Cuadrillas</h3>
+              <p>Gestiona encargados y obreros.</p>
+            </Link>
+          )}
+
+          {role === "superadmin" && (
+            <Link to="/register" className={styles.card}>
+              <h3>Usuarios</h3>
+              <p>Crear Admins y Residentes.</p>
+            </Link>
+          )}
+        </div>
       </main>
     </div>
   );

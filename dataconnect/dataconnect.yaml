@@ -1,0 +1,12 @@
+specVersion: "v1"
+serviceId: "saas-arq-cess"
+location: "us-central1"
+schema:
+  source: "./schema"
+  datasource:
+    postgresql:
+      database: "fdcdb"
+      cloudSql:
+        instanceId: "saas-arq-cess-fdc"
+      # schemaValidation: "COMPATIBLE"
+connectorDirs: ["./connector"]

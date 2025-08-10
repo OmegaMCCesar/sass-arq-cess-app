@@ -1,87 +1,166 @@
 // src/contexts/AuthContext.jsx
-import React, { createContext, useContext, useEffect, useState } from "react";
-import { auth, db } from "../lib/firebaseConfig";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import { initializeApp, getApps } from "firebase/app";
 import {
+  getAuth,
   onAuthStateChanged,
   signInWithEmailAndPassword,
-  signOut,
+  signOut as fbSignOut,
   createUserWithEmailAndPassword,
 } from "firebase/auth";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  setDoc,
+  serverTimestamp,
+} from "firebase/firestore";
 
-const AuthContext = createContext();
+import {
+  auth,            // auth de la app principal
+  db,              // firestore de la app principal
+  firebaseConfig,  // necesario para inicializar la app secundaria
+} from "../lib/firebaseConfig";
 
-export function useAuth() {
-  return useContext(AuthContext);
-}
+const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
-  const [role, setRole] = useState(null); // Nuevo: Rol del usuario
-  const [companyId, setCompanyId] = useState(null); // Nuevo: Empresa a la que pertenece
+  const [role, setRole] = useState(null);
+  const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Escuchar cambios en autenticación y cargar rol/empresa
+  // Suscripción a Auth + lectura de rol en Firestore
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      if (currentUser) {
-        setUser(currentUser);
-
-        // Obtener datos extra desde Firestore
-        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          setRole(data.role || "residente");
-          setCompanyId(data.companyId || null);
-        } else {
-          setRole(null);
-          setCompanyId(null);
-        }
-      } else {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      if (!fbUser) {
         setUser(null);
         setRole(null);
-        setCompanyId(null);
+        setProfile(null);
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+
+      setUser(fbUser);
+
+      try {
+        const ref = doc(db, "users", fbUser.uid);
+        const snap = await getDoc(ref);
+
+        if (snap.exists()) {
+          const data = snap.data();
+          setRole(data.role ?? null);
+          setProfile(data);
+        } else {
+          // Si no existe el doc, crea un placeholder mínimo (sin rol)
+          const base = {
+            uid: fbUser.uid,
+            email: fbUser.email || "",
+            role: null,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          };
+          await setDoc(ref, base, { merge: true });
+          setRole(null);
+          setProfile(base);
+        }
+      } catch (err) {
+        console.error("AuthContext: error leyendo perfil:", err);
+        setRole(null);
+        setProfile(null);
+      } finally {
+        // Importante: bajar loading sólo cuando terminamos de leer Firestore
+        setLoading(false);
+      }
     });
 
-    return unsubscribe;
+    return () => unsubscribe();
   }, []);
 
-  // Funciones de login, logout y registro
-  const login = (email, password) => {
-    return signInWithEmailAndPassword(auth, email, password);
+  // Helpers de sesión
+  const signIn = (email, password) =>
+    signInWithEmailAndPassword(auth, email, password);
+
+  const signOut = () => fbSignOut(auth);
+
+  /**
+   * Crear usuario (Auth) + documento en Firestore (users/{uid})
+   * sin perder la sesión actual del superadmin/admin.
+   * Usa una app secundaria para que createUser no cambie la sesión activa.
+   */
+  const createUserWithRole = async ({ email, password, role, extra = {} }) => {
+    // 1) Inicializa app secundaria (si no existe)
+    const secondaryApp =
+      getApps().find((a) => a.name === "secondary") ||
+      initializeApp(firebaseConfig, "secondary");
+
+    const secondaryAuth = getAuth(secondaryApp);
+
+    try {
+      // 2) Crea usuario en la app secundaria (no altera la sesión actual)
+      const cred = await createUserWithEmailAndPassword(
+        secondaryAuth,
+        email,
+        password
+      );
+      const uid = cred.user.uid;
+
+      // 3) Crea/actualiza doc en Firestore con permisos del usuario actual
+      await setDoc(
+        doc(db, "users", uid),
+        {
+          uid,
+          email,
+          role: role ?? null,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          ...extra,
+        },
+        { merge: true }
+      );
+
+      return uid;
+    } finally {
+      // 4) Cierra sesión secundaria para limpiar
+      try {
+        await fbSignOut(secondaryAuth);
+      } catch {
+        /* noop */
+      }
+    }
   };
 
-  const logout = () => {
-    return signOut(auth);
+  const hasRole = (...allowed) => {
+    if (!allowed || allowed.length === 0) return true;
+    return allowed.includes(role);
   };
 
-  const register = async (email, password, role = "residente", companyId = null) => {
-  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-  const uid = userCredential.user.uid;
-
-  await setDoc(doc(db, "users", uid), {
-    role,
-    companyId,
-    email,
-  });
-
-  return userCredential;
-};
-
-  const value = {
-    user,
-    role,
-    companyId,
-    login,
-    logout,
-    register,
-  };
-
-  return (
-    <AuthContext.Provider value={value}>
-      {!loading && children}
-    </AuthContext.Provider>
+  const value = useMemo(
+    () => ({
+      user,
+      role,
+      profile,
+      loading,
+      signIn,
+      signOut,
+      hasRole,
+      createUserWithRole,
+    }),
+    [user, role, profile, loading]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+export function useAuthContext() {
+  const ctx = useContext(AuthContext);
+  if (!ctx)
+    throw new Error("useAuthContext debe usarse dentro de <AuthProvider />");
+  return ctx;
 }

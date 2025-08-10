@@ -1,0 +1,47 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper: leer rol actual desde Firestore
+    function userRole() {
+      return request.auth != null
+        ? get(/databases/(default)/documents/users/$(request.auth.uid)).data.role
+        : null;
+    }
+    function isAdminOrAbove() {
+      let r = userRole();
+      return r == "admin" || r == "superadmin";
+    }
+    function isResidente() {
+      return userRole() == "residente";
+    }
+    function isOwnerOfBache(bid) {
+      return request.auth != null
+        && get(/databases/(default)/documents/baches/$(bid)).data.residenteUid == request.auth.uid;
+    }
+
+    // Evidencias de baches:
+    //   /baches/{bacheId}/{phase}/{filename}
+    match /baches/{bacheId}/{phase}/{filename} {
+      // Leer:
+      //  - admin/super: todos
+      //  - residente: solo si es dueño del bache
+      allow read: if request.auth != null && (
+        isAdminOrAbove() || (isResidente() && isOwnerOfBache(bacheId))
+      );
+
+      // Escribir:
+      //  - admin/super siempre
+      //  - residente solo si es dueño del bache
+      allow write: if request.auth != null && (
+        isAdminOrAbove() || (isResidente() && isOwnerOfBache(bacheId))
+      );
+    }
+
+    // Denegar lo demás por defecto
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

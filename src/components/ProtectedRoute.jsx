@@ -1,27 +1,29 @@
 import React from "react";
-import { Navigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
+import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { useAuth } from "../hooks/useAuth";
 
-export default function ProtectedRoute({ children, allowedRoles }) {
+export default function ProtectedRoute({ allowedRoles = [], children }) {
   const { user, role, loading } = useAuth();
+  const location = useLocation();
 
-  if (loading) return <div>Cargando...</div>;
+  // 1) Mientras se resuelve auth o el rol, espera
+  const roleRequired = allowedRoles && allowedRoles.length > 0;
+  const roleReady = role !== undefined && role !== null;
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
+  if (loading || (user && roleRequired && !roleReady)) {
+    return <div style={{ padding: 16 }}>Cargando…</div>;
   }
 
-  if (allowedRoles) {
-  // Normalizamos role para que siempre sea un array
-  const userRoles = Array.isArray(role) ? role : [role];
+  // 2) No logueado -> login
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
 
-  // Si no hay intersección entre roles del usuario y roles permitidos
-  const hasAccess = userRoles.some(r => allowedRoles.includes(r));
-  if (!hasAccess) {
+  // 3) Ya hay sesión, pero rol no permitido
+  if (roleRequired && roleReady && !allowedRoles.includes(role)) {
     return <Navigate to="/unauthorized" replace />;
   }
-}
 
-
-  return children;
+  // 4) Render: soporta children o <Outlet/>
+  return children ? <>{children}</> : <Outlet />;
 }

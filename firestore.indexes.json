@@ -1,0 +1,13 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "baches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "residenteUid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
