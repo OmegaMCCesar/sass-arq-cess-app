@@ -1,43 +1,87 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import {
-  createBache, listBachesByResidente, listAllBaches,
-  updateBache, uploadEvidence
+  createBache,
+  listBachesByResidente,
+  listAllBaches,
+  deleteBache,
 } from "../../services/bachesService";
-import { listCuadrillas, listEncargados } from "../../services/cuadrillasService";
+import { useGeolocated } from "react-geolocated";
 
-const STATUSES = ["registrado", "iniciado", "en-proceso", "terminado"];
+import AppLayout from "../../components/layout/AppLayout";
+import BacheForm from "../../components/bache/BacheForm";
+import BacheList from "../../components/bache/BacheList";
+import BacheMap from "../../components/bache/BacheMap";
+import BacheCroquis from "../../components/bache/BacheCroquis";
+
+import { exportToExcel } from "../../utils/excelUtils";
+import { reverseGeocode } from "../../services/geocodingService";
 
 export default function BachesPage() {
   const { user, role } = useAuth();
-  const canSeeAll = useMemo(() => ["admin","superadmin"].includes(role), [role]);
+  const canSeeAll = useMemo(
+    () => ["admin", "superadmin"].includes(role),
+    [role]
+  );
 
-  // Crear bache
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [cuadrillaId, setCuadrillaId] = useState("");
-  const [encargadoId, setEncargadoId] = useState("");
+  const {
+    coords,
+    isGeolocationAvailable,
+    isGeolocationEnabled,
+    getPosition,
+  } = useGeolocated({
+    positionOptions: { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 },
+    watchPosition: true,
+    userDecisionTimeout: 8000,
+  });
 
-  // Listado
+  const [geoAccuracy, setGeoAccuracy] = useState(null);
+
+  const [bacheData, setBacheData] = useState({
+    calle: "",
+    entreCalles: [],
+    largo: 0,
+    ancho: 0,
+    forma: "cuadrado",
+  });
+
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  // Select data
-  const [cuadrillas, setCuadrillas] = useState([]);
-  const [encargados, setEncargados] = useState([]);
+  useEffect(() => {
+    if (coords && coords.accuracy != null) setGeoAccuracy(coords.accuracy);
+  }, [coords]);
 
-  // Upload refs por fila
-  const beforeRefs = useRef({});
-  const duringRefs = useRef({});
-  const afterRefs = useRef({});
+  useEffect(() => {
+    (async () => {
+      if (coords?.latitude && coords?.longitude) {
+        try {
+          const result = await reverseGeocode(coords.latitude, coords.longitude);
+          if (result) {
+            setBacheData((prev) => ({
+              ...prev,
+              calle: result.callePrincipal || prev.calle,
+              entreCalles: result.entreCalles || prev.entreCalles,
+            }));
+          }
+        } catch {
+          setErr("No se pudo obtener la dirección de las coordenadas.");
+        }
+      }
+    })();
+  }, [coords]);
 
-  const refresh = async () => {
+  const refresh = useCallback(async () => {
     if (!user) return;
-    setLoading(true); setErr(""); setMsg("");
+    setLoading(true);
+    setErr("");
+    setMsg("");
     try {
-      const data = canSeeAll ? await listAllBaches() : await listBachesByResidente(user.uid);
+      const data = canSeeAll
+        ? await listAllBaches()
+        : await listBachesByResidente(user.uid);
       setRows(data);
     } catch (e) {
       console.error(e);
@@ -45,189 +89,158 @@ export default function BachesPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, canSeeAll]);
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [cs, es] = await Promise.all([listCuadrillas(), listEncargados()]);
-        setCuadrillas(cs);
-        setEncargados(es);
-      } catch (e) {
-        console.error(e);
-      }
-    })();
-  }, []);
+    refresh();
+  }, [refresh, user, role]);
 
-  useEffect(() => { refresh(); }, [user, role]); // refresca al cambiar usuario/rol
+  const nextNoBacheForStreet = useCallback(
+    (calle) => {
+      const nums = rows
+        .filter(
+          (r) =>
+            (r.calle || "").trim().toLowerCase() ===
+            (calle || "").trim().toLowerCase()
+        )
+        .map((r) => r.noBache || 0);
+      const max = nums.length ? Math.max(...nums) : 0;
+      return max + 1;
+    },
+    [rows]
+  );
+
+  const validate = () => {
+    if (!user) return "Debes iniciar sesión.";
+    if (!isGeolocationAvailable) return "Tu dispositivo no soporta geolocalización.";
+    if (!isGeolocationEnabled) return "Activa la geolocalización en tu dispositivo.";
+    if (!coords) return "No se obtuvo ubicación. Toca 'Mejorar ubicación' e intenta de nuevo.";
+    if (geoAccuracy != null && geoAccuracy > 50)
+      return `Precisión baja (~${Math.round(
+        geoAccuracy
+      )} m). Muévete al aire libre o usa 'Mejorar ubicación'.`;
+    if (!bacheData.calle?.trim()) return "La calle principal es obligatoria.";
+    if ((bacheData.largo || 0) <= 0) return "El largo debe ser mayor a 0.";
+    if ((bacheData.ancho || 0) <= 0) return "El ancho debe ser mayor a 0.";
+    return null;
+  };
 
   const onCreate = async (e) => {
     e.preventDefault();
-    if (!user) return setErr("Debes iniciar sesión.");
-    setErr(""); setMsg("");
-    try {
-      const id = await createBache({
-        title: title || `Bache ${Date.now()}`,
-        description: description || "",
-        projectId: null,
-        residenteUid: user.uid,
-        cuadrillaId: cuadrillaId || null,
-        encargadoId: encargadoId || null,
-        status: "registrado"
-      });
-      setTitle(""); setDescription(""); setCuadrillaId(""); setEncargadoId("");
-      setMsg(`Bache creado (${id}).`);
-      refresh();
-    } catch (e) {
-      console.error(e);
-      setErr(e?.message || "No se pudo crear el bache.");
-    }
-  };
+    setErr("");
+    setMsg("");
 
-  const changeStatus = async (id, status) => {
-    try {
-      await updateBache(id, { status });
-      setMsg("Estado actualizado.");
-      refresh();
-    } catch (e) {
-      console.error(e);
-      setErr("No se pudo actualizar el estado.");
-    }
-  };
-
-  const doUpload = async (id, phase) => {
-    setErr(""); setMsg("");
-    const map = phase === "before" ? beforeRefs.current :
-                phase === "after" ? afterRefs.current : duringRefs.current;
-    const input = map[id];
-    if (!input || !input.files || !input.files[0]) {
-      setErr("Selecciona un archivo primero.");
+    const v = validate();
+    if (v) {
+      setErr(v);
       return;
     }
-    const file = input.files[0];
+
+    const coordenadas = { lat: coords.latitude, lng: coords.longitude };
+    const area = (bacheData.largo || 0) * (bacheData.ancho || 0);
+    const noBache = nextNoBacheForStreet(bacheData.calle);
+
     try {
-      await uploadEvidence({ bacheId: id, phase, file });
-      setMsg("Evidencia subida.");
-      input.value = "";
-      refresh();
-    } catch (e) {
-      console.error(e);
-      setErr("No se pudo subir la evidencia.");
+      await createBache({
+        ...bacheData,
+        noBache,
+        area,
+        coordenadas,
+        residenteUid: user.uid,
+        createdAt: new Date(),
+      });
+      setMsg(`Bache #${noBache} agregado en ${bacheData.calle}.`);
+      setBacheData({
+        calle: bacheData.calle,
+        entreCalles: bacheData.entreCalles || [],
+        largo: 0,
+        ancho: 0,
+        forma: "cuadrado",
+      });
+      await refresh();
+    } catch (e2) {
+      console.error(e2);
+      setErr(e2?.message || "No se pudo crear el bache.");
     }
   };
 
-  const StatusButtons = ({ row }) => {
-    const idx = STATUSES.indexOf(row.status || "registrado");
-    return (
-      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        {STATUSES.map((s, i) => (
-          <button
-            key={s}
-            disabled={i < idx} // no puedes retroceder
-            onClick={() => changeStatus(row.id, s)}
-            style={{ opacity: i === idx ? 1 : 0.7 }}
-            title={i < idx ? "No se puede retroceder" : (i === idx ? "Estado actual" : "Cambiar a " + s)}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
-    );
+  const handleDelete = async (id) => {
+    setErr("");
+    setMsg("");
+    try {
+      await deleteBache(id);
+      setMsg("Bache eliminado.");
+      await refresh();
+    } catch (e3) {
+      console.error(e3);
+      setErr(e3?.message || "No se pudo eliminar el bache.");
+    }
   };
 
-  const EvidenceUploader = ({ row }) => (
-    <div style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-      <div>
-        <label style={{ display: "block", fontWeight: 600 }}>Antes (before):</label>
-        <input type="file" accept="image/*" ref={el => beforeRefs.current[row.id] = el} />
-        <button onClick={() => doUpload(row.id, "before")} style={{ marginTop: 6 }}>Subir</button>
-        {row.photos?.before && <div><a href={row.photos.before} target="_blank" rel="noreferrer">Ver imagen</a></div>}
-      </div>
-      <div>
-        <label style={{ display: "block", fontWeight: 600 }}>Proceso (during):</label>
-        <input type="file" accept="image/*" ref={el => duringRefs.current[row.id] = el} />
-        <button onClick={() => doUpload(row.id, "during")} style={{ marginTop: 6 }}>Subir</button>
-        {Array.isArray(row.photos?.during) && row.photos.during.length > 0 && (
-          <ul style={{ marginTop: 6 }}>
-            {row.photos.during.map((u, i) => (
-              <li key={i}><a href={u} target="_blank" rel="noreferrer">Ver {i+1}</a></li>
-            ))}
-          </ul>
-        )}
-      </div>
-      <div>
-        <label style={{ display: "block", fontWeight: 600 }}>Final (after):</label>
-        <input type="file" accept="image/*" ref={el => afterRefs.current[row.id] = el} />
-        <button onClick={() => doUpload(row.id, "after")} style={{ marginTop: 6 }}>Subir</button>
-        {row.photos?.after && <div><a href={row.photos.after} target="_blank" rel="noreferrer">Ver imagen</a></div>}
-      </div>
-    </div>
-  );
+  const handleExport = () => {
+    exportToExcel(rows, "Reporte de Baches");
+    setMsg("Exportando a Excel...");
+  };
+
+  const retryLocation = () => {
+    try {
+      getPosition();
+    } catch {}
+  };
 
   return (
-    <div style={{ maxWidth: 1100, margin: "30px auto", padding: 16 }}>
-      <h2>Baches / Tareas</h2>
+    <AppLayout>
+      <div style={{ maxWidth: 1200, margin: "30px auto", padding: 16 }}>
+        <h2>Levantamiento de Baches</h2>
 
-      {/* Crear bache */}
-      <form onSubmit={onCreate} style={{ display: "grid", gap: 8, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", marginBottom: 12 }}>
-        <input placeholder="Título" value={title} onChange={(e)=>setTitle(e.target.value)} />
-        <input placeholder="Descripción (opcional)" value={description} onChange={(e)=>setDescription(e.target.value)} />
-        <select value={cuadrillaId} onChange={(e)=>setCuadrillaId(e.target.value)}>
-          <option value="">(Cuadrilla — opcional)</option>
-          {cuadrillas.map(c => (
-            <option key={c.id} value={c.id}>{(c.number ?? "—")} · {c.name}</option>
-          ))}
-        </select>
-        <select value={encargadoId} onChange={(e)=>setEncargadoId(e.target.value)}>
-          <option value="">(Encargado — opcional)</option>
-          {encargados.map(en => (
-            <option key={en.id} value={en.id}>{en.name || "(sin nombre)"} — {en.id}</option>
-          ))}
-        </select>
-        <div>
-          <button type="submit">Crear bache</button>
+        <div style={{ fontSize: 12, opacity: 0.8 }}>
+          {coords && (
+            <span>
+              Precisión: {geoAccuracy != null ? `${Math.round(geoAccuracy)} m` : "—"} ·
+              Lat/Lng: {coords.latitude.toFixed(6)}, {coords.longitude.toFixed(6)}{" "}
+              <button onClick={retryLocation} style={{ marginLeft: 8 }}>
+                Mejorar ubicación
+              </button>
+            </span>
+          )}
         </div>
-      </form>
 
-      {msg && <p style={{ color:"green" }}>{msg}</p>}
-      {err && <p style={{ color:"crimson" }}>{err}</p>}
+        <BacheForm
+          data={bacheData}
+          onChange={setBacheData}
+          onSubmit={onCreate}
+          isGeolocationAvailable={isGeolocationAvailable}
+          isGeolocationEnabled={isGeolocationEnabled}
+          coords={coords}
+        />
 
-      {/* Tabla */}
-      <div style={{ overflowX: "auto", marginTop: 8 }}>
-        <table width="100%" cellPadding="8" style={{ borderCollapse: "collapse" }}>
-          <thead>
-            <tr style={{ background: "#f4f6f8" }}>
-              <th align="left">Título</th>
-              <th align="left">Residente</th>
-              <th align="left">Cuadrilla</th>
-              <th align="left">Encargado</th>
-              <th align="left">Estado</th>
-              <th align="left">Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map(r => (
-              <tr key={r.id} style={{ borderTop: "1px solid #e5e7eb" }}>
-                <td>{r.title}</td>
-                <td style={{ fontFamily: "monospace" }}>{r.residenteUid}</td>
-                <td style={{ fontFamily: "monospace" }}>{r.cuadrillaId || "-"}</td>
-                <td style={{ fontFamily: "monospace" }}>{r.encargadoId || "-"}</td>
-                <td><b>{r.status}</b></td>
-                <td><StatusButtons row={r} /></td>
-              </tr>
-            ))}
-            {!rows.length && !loading && <tr><td colSpan="6" style={{ textAlign:"center", padding: 16 }}>Sin baches</td></tr>}
-          </tbody>
-        </table>
+        {msg && <p style={{ color: "green" }}>{msg}</p>}
+        {err && <p style={{ color: "crimson" }}>{err}</p>}
+
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 20,
+            marginTop: 20,
+          }}
+        >
+          <div>
+            <BacheMap baches={rows} />
+          </div>
+          <div>
+            <BacheList rows={rows} loading={loading} onDelete={handleDelete} />
+            <button onClick={handleExport} style={{ marginTop: 10 }}>
+              Exportar a Excel
+            </button>
+          </div>
+        </div>
+
+        <div style={{ marginTop: 28 }}>
+          <h3>Croquis por calle</h3>
+          <BacheCroquis baches={rows} />
+        </div>
       </div>
-
-      {/* Evidencias por fila */}
-      {rows.map(r => (
-        <div key={r.id} style={{ border:"1px solid #e5e7eb", borderRadius: 8, padding: 12, marginTop: 12 }}>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>{r.title} — Evidencias</div>
-          <EvidenceUploader row={r} />
-        </div>
-      ))}
-    </div>
+    </AppLayout>
   );
 }
