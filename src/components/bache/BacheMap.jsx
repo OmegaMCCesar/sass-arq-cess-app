@@ -10,8 +10,9 @@ import {
 } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import styles from "../../styles/BacheMap.module.css";
 
-// Fix iconos por defecto si quieres usar el default en otros lados
+// Iconos por defecto si los necesitas en otros puntos
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -22,8 +23,7 @@ L.Icon.Default.mergeOptions({
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
 
-// ===== Helpers =====
-
+// Helpers
 function centroidOf(vertices) {
   let a = 0, cx = 0, cy = 0;
   const n = vertices.length;
@@ -44,7 +44,6 @@ function centroidOf(vertices) {
   cy /= (6 * a);
   return { x: cx, y: cy };
 }
-
 function localMetersToLatLng(vertices, centerLat, centerLng) {
   const centroid = centroidOf(vertices);
   const mPerDegLat = 111320;
@@ -58,7 +57,6 @@ function localMetersToLatLng(vertices, centerLat, centerLng) {
     return [centerLat + dLat, centerLng + dLng];
   });
 }
-
 function collectBounds(baches, userCoords) {
   const latlngs = [];
   for (const b of baches || []) {
@@ -76,36 +74,24 @@ function collectBounds(baches, userCoords) {
   if (userCoords) latlngs.push([userCoords.lat, userCoords.lng]);
   return latlngs;
 }
-
 function FitOnData({ baches, user }) {
   const map = useMap();
   useEffect(() => {
     const pts = collectBounds(baches, user);
     if (!pts.length) return;
     const bounds = L.latLngBounds(pts);
-    if (bounds.isValid()) {
-      map.fitBounds(bounds.pad(0.2));
-    }
+    if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
   }, [baches, user, map]);
   return null;
 }
-
 function GoToMyLocationButton({ user }) {
   const map = useMap();
   if (!user) return null;
-  const go = () => {
-    map.setView([user.lat, user.lng], 18, { animate: true });
-  };
   return (
-    <div
-      style={{ position: "absolute", right: 12, bottom: 12, zIndex: 1000 }}
-    >
+    <div className={styles.goto}>
       <button
-        onClick={go}
-        style={{
-          background: "#fff", border: "1px solid #ccc", padding: "8px 10px",
-          borderRadius: 6, boxShadow: "0 2px 6px rgba(0,0,0,0.15)", cursor: "pointer",
-        }}
+        className={styles.btn}
+        onClick={() => map.setView([user.lat, user.lng], 18, { animate: true })}
         title="Ir a mi ubicación"
       >
         📍 Ir a mi ubicación
@@ -113,16 +99,10 @@ function GoToMyLocationButton({ user }) {
     </div>
   );
 }
-
-// Icono HTML con número (DivIcon)
 function makeNumberIcon(n, selected) {
   return L.divIcon({
     className: "bache-marker",
-    html: `
-      <div class="pin ${selected ? "sel" : ""}">
-        ${n}
-      </div>
-    `,
+    html: `<div class="${styles.markerPin} ${selected ? styles.markerPinSel : ""}">${n}</div>`,
     iconSize: [30, 38],
     iconAnchor: [15, 34],
     popupAnchor: [0, -30],
@@ -142,21 +122,6 @@ export default function BacheMap({ baches = [], userCoords = null, selectedBache
     return [19.432608, -99.133209];
   }, [userCoords, points]);
 
-  // CSS para el pin numerado
-  const css = `
-    .bache-marker .pin {
-      display: inline-flex; align-items: center; justify-content: center;
-      width: 28px; height: 28px; border-radius: 50%;
-      background: #1a47ff; color: #fff; font-weight: 700; font-size: 13px;
-      border: 2px solid #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-      transform: translateY(4px);
-    }
-    .bache-marker .pin.sel {
-      background: #111; color: #ffcc00;
-    }
-  `;
-
-  // Cuando cambia el seleccionado, haz flyTo a ese punto
   function FlyToSelected({ id }) {
     const map = useMap();
     useEffect(() => {
@@ -170,8 +135,7 @@ export default function BacheMap({ baches = [], userCoords = null, selectedBache
   }
 
   return (
-    <div style={{ height: 420, position: "relative", borderRadius: 8, overflow: "hidden" }}>
-      <style>{css}</style>
+    <div className={styles.mapWrap}>
       <MapContainer center={center} zoom={15} style={{ height: "100%", width: "100%" }}>
         <TileLayer
           attribution='&copy; OpenStreetMap'
@@ -181,7 +145,6 @@ export default function BacheMap({ baches = [], userCoords = null, selectedBache
         <FitOnData baches={baches} user={userCoords} />
         <FlyToSelected id={selectedBacheId} />
 
-        {/* Polígonos y lados resaltados */}
         {baches.map((b) => {
           const c = b?.coordenadas;
           const verts = Array.isArray(b?.vertices) && b.vertices.length >= 3 ? b.vertices : null;
@@ -235,14 +198,9 @@ export default function BacheMap({ baches = [], userCoords = null, selectedBache
               {curbEdgeLatLngs && (
                 <Polyline
                   positions={curbEdgeLatLngs}
-                  pathOptions={{
-                    color: "#6b7280",
-                    weight: selected ? 6 : 4,
-                    dashArray: "8,6",
-                  }}
+                  pathOptions={{ color: "#6b7280", weight: selected ? 6 : 4, dashArray: "8,6" }}
                 />
               )}
-
               <Marker
                 position={[c.lat, c.lng]}
                 icon={makeNumberIcon(b.idx, selected)}

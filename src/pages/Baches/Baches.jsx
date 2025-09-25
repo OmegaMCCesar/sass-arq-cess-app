@@ -7,15 +7,19 @@ import BacheMap from "../../components/bache/BacheMap";
 import { useGeolocated } from "react-geolocated";
 import { exportToExcel } from "../../utils/excelUtils";
 import { reverseGeocode } from "../../services/geocodingService";
+import styles from "../../styles/BachesPage.module.css";
 
 import {
   createBache,
   listBachesByResidente,
   listAllBaches,
-  deleteBache,
+  deleteBache as deleteBacheServer,
+  updateBache as updateBacheServer,
 } from "../../services/bachesService";
 
-// Helpers geométricos mínimos locales
+import { enqueue, processQueue, onOnline } from "../../utils/offlineQueue";
+
+// --- Helpers geométricos locales ---
 function polygonAreaMeters(vertices = []) {
   if (!Array.isArray(vertices) || vertices.length < 3) return 0;
   let s = 0;
@@ -76,7 +80,6 @@ export default function BachesPage() {
     curbSide: "",
   });
 
-  // badges “autocompletado”
   const [autoFilledCalle, setAutoFilledCalle] = useState(false);
   const [autoFilledEntre, setAutoFilledEntre] = useState(false);
 
@@ -85,24 +88,25 @@ export default function BachesPage() {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
 
-  // NUEVO: selección sincronizada lista <-> mapa
   const [selectedBacheId, setSelectedBacheId] = useState(null);
+
+  // evita duplicados por doble click
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Botón "Obtener ubicación"
   const onGetLocation = useCallback(() => {
     if (!isGeolocationAvailable) return;
     setLocating(true);
-    getPosition(); // no retorna promesa
+    getPosition();
     setTimeout(() => {
       if (!coords && !positionError) setLocating(false);
     }, 15000);
   }, [getPosition, isGeolocationAvailable, coords, positionError]);
 
-  // Llega coords -> autollenar calle/entreCalles
+  // coords -> autollenado
   useEffect(() => {
     if (!coords) return;
     setLocating(false);
-
     (async () => {
       try {
         const result = await reverseGeocode(coords.latitude, coords.longitude);
@@ -117,17 +121,14 @@ export default function BachesPage() {
         }));
         setAutoFilledCalle(Boolean(calle));
         setAutoFilledEntre(Boolean(entre.length));
-      } catch (e) {
-        console.error("reverseGeocode error:", e);
-      }
+      } catch (e) { console.error(e); }
     })();
   }, [coords]);
 
-  // Error geolocalización
   useEffect(() => {
     if (!positionError) return;
     setLocating(false);
-    setErr(positionError.message || "No se pudo obtener la ubicación (permiso denegado o GPS inactivo).");
+    setErr(positionError.message || "No se pudo obtener la ubicación.");
   }, [positionError]);
 
   const refresh = useCallback(async () => {
@@ -136,7 +137,6 @@ export default function BachesPage() {
     try {
       const data = canSeeAll ? await listAllBaches() : await listBachesByResidente(user.uid);
       setRows(data);
-      // reset selección si el item ya no está
       setSelectedBacheId(prev => (data.some(d => d.id === prev) ? prev : null));
     } catch (e) {
       console.error(e);
@@ -148,55 +148,56 @@ export default function BachesPage() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Numeración estable basada en el orden actual
-  const numberedRows = useMemo(() => {
-    return rows.map((r, i) => ({ ...r, idx: i + 1 }));
-  }, [rows]);
-
-  // Al seleccionar (desde mapa o lista), hacer scroll a la tarjeta
+  // Procesar cola al volver online
   useEffect(() => {
-    if (!selectedBacheId) return;
-    const el = document.getElementById(`bache-card-${selectedBacheId}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [selectedBacheId]);
+    const off = onOnline(async () => {
+      await processQueue({
+        create: async (payload) => {
+          const { id: newId } = await createBache(payload);
+          // opcional: podrías reconciliar tempIds aquí
+          return newId;
+        },
+        update: async (payload) => {
+          await updateBacheServer(payload.id, payload.partial);
+        },
+        delete: async (id) => {
+          await deleteBacheServer(id);
+        },
+      });
+      refresh();
+    });
+    return off;
+  }, [refresh]);
+
+  // Numeración visual
+  const numberedRows = useMemo(() => rows.map((r, i) => ({ ...r, idx: i + 1 })), [rows]);
 
   function nextNoBacheForStreet(calle) {
     const list = rows.filter(r => (r.calle || "").trim().toLowerCase() === (calle || "").trim().toLowerCase());
     const nums = list.map(r => Number(r.noBache) || 0);
-    const next = (nums.length ? Math.max(...nums) : 0) + 1;
-    return next;
+    return (nums.length ? Math.max(...nums) : 0) + 1;
   }
-
   function parseMedidas(text) {
     return (text || "")
-      .split("\n")
-      .map(s => s.trim())
-      .filter(Boolean)
-      .map(n => parseFloat(n.replace(",", ".")))
-      .filter(v => !isNaN(v));
+      .split("\n").map(s => s.trim()).filter(Boolean)
+      .map(n => parseFloat(n.replace(",", "."))).filter(v => !isNaN(v));
   }
 
   const onCreate = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;            // guard anti-doble click
+    setIsSubmitting(true);
+
     setErr(""); setMsg("");
 
-    if (!user) return setErr("Debes iniciar sesión.");
-    if (!coords) return setErr("Primero obtén la ubicación (botón).");
+    if (!user) { setIsSubmitting(false); return setErr("Debes iniciar sesión."); }
+    if (!coords) { setIsSubmitting(false); return setErr("Primero obtén la ubicación (botón)."); }
 
     const medidas = parseMedidas(bacheData.medidasText);
-    if (medidas.length < 3) {
-      return setErr("Ingresa 3 medidas (triángulo) o 4 medidas (trapecio).");
-    }
+    if (medidas.length < 3) { setIsSubmitting(false); return setErr("Ingresa 3 medidas (triángulo) o 4 medidas (trapecio)."); }
 
-    let forma, vertices;
-    if (medidas.length === 3) {
-      forma = "triangulo";
-      vertices = verticesFromMedidas3(medidas);
-    } else {
-      forma = "trapecio";
-      vertices = verticesFromMedidas4(medidas);
-    }
-
+    const forma = (medidas.length === 3) ? "triangulo" : "trapecio";
+    const vertices = (medidas.length === 3) ? verticesFromMedidas3(medidas) : verticesFromMedidas4(medidas);
     const area = polygonAreaMeters(vertices);
     const noBache = nextNoBacheForStreet(bacheData.calle);
 
@@ -213,20 +214,92 @@ export default function BachesPage() {
       noBache,
     };
 
+    const isOnline = navigator.onLine;
+
     try {
-      await createBache(payload);
-      setMsg(`Bache #${noBache} creado en ${bacheData.calle || "calle"}.`);
-      setBacheData(prev => ({
-        ...prev,
-        medidasText: "",
-        curbSide: "",
-      }));
+      if (isOnline) {
+        await createBache(payload);
+        setMsg(`Bache #${noBache} creado en ${bacheData.calle || "calle"}.`);
+        refresh();
+      } else {
+        // UI optimista + cola
+        const tempId = `temp_${Date.now()}`;
+        setRows(prev => [...prev, { id: tempId, ...payload }]);
+        enqueue({ type: "create", payload });
+        setMsg("Bache en cola para sincronizar (offline).");
+      }
+      setBacheData(prev => ({ ...prev, medidasText: "", curbSide: "" }));
       setAutoFilledCalle(false);
       setAutoFilledEntre(false);
-      refresh();
     } catch (e2) {
       console.error(e2);
       setErr(e2?.message || "No se pudo crear el bache.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const onDelete = async (id) => {
+    if (!id) return;
+    const ok = window.confirm("¿Eliminar este bache? Esta acción no se puede deshacer.");
+    if (!ok) return;
+
+    const isOnline = navigator.onLine;
+
+    try {
+      if (isOnline) {
+        await deleteBacheServer(id);
+        setMsg("Bache eliminado.");
+        setRows(prev => prev.filter(r => r.id !== id));
+      } else {
+        // UI optimista + cola
+        setRows(prev => prev.filter(r => r.id !== id));
+        enqueue({ type: "delete", payloadId: id });
+        setMsg("Eliminación en cola para sincronizar (offline).");
+      }
+    } catch (e) {
+      console.error(e);
+      setErr(e?.message || "No se pudo eliminar el bache.");
+    }
+  };
+
+  const onUpdateBache = async (id, payload) => {
+  // Aquí puedes añadir control de concurrencia/offline si quieres
+  await updateBacheServer(id, payload);
+  await refresh();
+};
+
+  const onUpdateRow = async (id, partial) => {
+    // Recalcular si vienen medidas
+    let patch = { ...partial };
+    if (Array.isArray(partial.medidas)) {
+      const m = partial.medidas;
+      let verts = null;
+      if (m.length === 3) verts = verticesFromMedidas3(m);
+      else if (m.length >= 4) verts = verticesFromMedidas4(m);
+      if (verts) {
+        patch.vertices = verts;
+        patch.area = polygonAreaMeters(verts);
+      }
+    }
+
+    // UI optimista
+    setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
+
+    const isOnline = navigator.onLine;
+    try {
+      if (isOnline) {
+        await updateBacheServer(id, patch);
+        setMsg("Bache actualizado.");
+      } else {
+        enqueue({ type: "update", payload: { id, partial: patch } });
+        setMsg("Actualización en cola para sincronizar (offline).");
+      }
+    } catch (e) {
+      console.error(e);
+      setErr(e?.message || "No se pudo actualizar el bache.");
+      // opcional: revertir UI si falla
+      refresh();
     }
   };
 
@@ -235,24 +308,17 @@ export default function BachesPage() {
     setMsg("Exportando a Excel...");
   };
 
-  const onDelete = async (id) => {
-    if (!id) return;
-    const ok = window.confirm("¿Eliminar este bache? Esta acción no se puede deshacer.");
-    if (!ok) return;
-    try {
-      await deleteBache(id);
-      setMsg("Bache eliminado.");
-      refresh();
-    } catch (e) {
-      console.error(e);
-      setErr(e?.message || "No se pudo eliminar el bache (revisa permisos).");
-    }
+  // Scroll a tarjeta SOLO cuando se pide explícitamente
+  const onRequestScrollTo = (id) => {
+    setSelectedBacheId(id);
+    const el = document.getElementById(`bache-card-${id}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   return (
     <AppLayout>
-      <div style={{ maxWidth: 1100, margin: "30px auto", padding: 16 }}>
-        <h2>Levantamiento de Baches</h2>
+      <div className={styles.wrapper}>
+        <h2 className={styles.header}>Levantamiento de Baches</h2>
 
         <BacheForm
           data={bacheData}
@@ -267,31 +333,37 @@ export default function BachesPage() {
           setAutoFilledCalle={setAutoFilledCalle}
           autoFilledEntre={autoFilledEntre}
           setAutoFilledEntre={setAutoFilledEntre}
+          isSubmitting={isSubmitting}
         />
 
-        {msg && <p style={{ color: "green" }}>{msg}</p>}
-        {err && <p style={{ color: "crimson" }}>{err}</p>}
+        {msg && <p className={`${styles.flash} ${styles.flashSuccess}`}>{msg}</p>}
+        {err && <p className={`${styles.flash} ${styles.flashError}`}>{err}</p>}
 
-        <div style={{ display: "flex", gap: 20, marginTop: 20 }}>
-          <div style={{ flex: 1 }}>
+        <div className={styles.split}>
+          <div className={styles.card}>
             <BacheMap
               baches={numberedRows}
               userCoords={coords ? { lat: coords.latitude, lng: coords.longitude } : null}
               selectedBacheId={selectedBacheId}
-              onSelectBache={(id) => setSelectedBacheId(id)}
+              onSelectBache={(id) => setSelectedBacheId(id)}     // solo resalta
+              onScrollToBache={onRequestScrollTo}                // botón explícito en popup
             />
           </div>
-          <div style={{ flex: 1 }}>
+          <div>
             <BacheList
               rows={numberedRows}
               loading={loading}
               onDelete={onDelete}
+              onUpdate={onUpdateRow}
               selectedBacheId={selectedBacheId}
-              onSelectBache={(id) => setSelectedBacheId(id)}
+              onSelectBache={(id) => setSelectedBacheId(id)}     // resalta al clickear tarjeta
+              onUpdateBache={onUpdateBache}
             />
-            <button onClick={handleExport} style={{ marginTop: 10 }}>
-              Exportar a Excel
-            </button>
+            <div className={styles.exportWrap}>
+              <button className={`${styles.btn} ${styles.btnGhost}`} onClick={handleExport}>
+                Exportar a Excel
+              </button>
+            </div>
           </div>
         </div>
       </div>

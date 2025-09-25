@@ -1,0 +1,63 @@
+.wrapper {
+  max-width: 1100px;
+  margin: 30px auto;
+  padding: 16px;
+}
+
+.header {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.flash {
+  margin: 8px 0 0;
+  font-size: 0.95rem;
+}
+.flashSuccess { color: #137333; }
+.flashError { color: #b00020; }
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+  margin-top: 20px;
+}
+@media (min-width: 980px) {
+  .split {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  background: #111827;
+  color: #fff;
+  border: 1px solid #111827;
+  transition: transform .06s ease, box-shadow .2s ease, background .2s ease;
+}
+.btn:hover { box-shadow: 0 4px 14px rgba(0,0,0,.15); }
+.btn:active { transform: translateY(1px); }
+
+.btnGhost {
+  background: #fff;
+  color: #111827;
+  border: 1px solid #d1d5db;
+}
+
+.exportWrap {
+  margin-top: 10px;
+}

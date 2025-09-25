@@ -13,11 +13,13 @@ import CalculadoraPage from "./pages/Calculadora/Calculadora";
 import ReportesPage from "./pages/Reportes/Reportes";
 import WorkersPage from "./pages/Workers/Workers";
 import BachesPage from "./pages/Baches/Baches";
+import Navbar from "./components/layout/Navbar";
 
 function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+      <Navbar />
         <Routes>
           {/* Públicas */}
           <Route path="/login" element={<Login />} />

@@ -1,82 +1,196 @@
+/* Contenedor principal */
 .navbar {
-  background-color: #004080;
-  color: white;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1.5rem;
-  font-weight: 600;
   position: sticky;
   top: 0;
   z-index: 100;
+  background: #004080;
+  color: #fff;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  box-shadow: 0 2px 10px rgba(0,0,0,.12);
 }
 
+/* Marca + botón burger */
+.left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Burger (solo móvil) */
+.burger {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+.burger:hover { background: rgba(255,255,255,.08); }
+.burger:active { transform: translateY(1px); }
+
+.burgerBar {
+  width: 20px;
+  height: 2px;
+  background: #fff;
+  display: block;
+}
+
+/* Marca */
 .brand {
   color: white;
   text-decoration: none;
-  font-size: 1.4rem;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: .2px;
 }
+.brand:hover { color: #aad8ff; }
 
-.brand:hover {
-  color: #aad8ff;
-}
-
-.menu {
+/* Menú desktop */
+.menuDesktop {
+  display: none;
   list-style: none;
-  display: flex;
-  gap: 1.5rem;
+  gap: 1.25rem;
   margin: 0;
   padding: 0;
 }
 
+/* Sesión (derecha) */
+.session {
+  display: none;
+  align-items: center;
+  gap: 10px;
+}
+
+.user {
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: .9rem;
+  opacity: .9;
+}
+
+/* Links */
 .link {
   color: white;
   text-decoration: none;
-  font-weight: 500;
-  transition: color 0.2s ease;
+  font-weight: 600;
+  transition: color .2s ease;
 }
-
-.link:hover {
-  color: #aad8ff;
-}
-
+.link:hover { color: #aad8ff; }
 .active {
   border-bottom: 2px solid #aad8ff;
   padding-bottom: 2px;
 }
 
-.session {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.user {
-  font-size: 0.9rem;
-  opacity: 0.85;
-}
-
-.btn {
+/* Botones */
+.btn, .btnFull {
   background-color: #aad8ff;
   color: #004080;
   border: none;
-  padding: 0.4rem 0.8rem;
-  border-radius: 4px;
-  font-weight: 600;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-weight: 700;
   cursor: pointer;
   text-decoration: none;
+  transition: background .2s ease, box-shadow .2s ease, transform .06s ease;
+}
+.btn:hover, .btnFull:hover { background: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.15); }
+.btn:active, .btnFull:active { transform: translateY(1px); }
+.btnPrimary { background: #fff; }
+
+/* ---------- MÓVIL: Panel lateral ---------- */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .2s ease, visibility .2s ease;
+}
+.backdropShow {
+  opacity: 1;
+  visibility: visible;
 }
 
-.btn:hover {
-  background-color: white;
+.mobile {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100dvh;
+  width: 86%;
+  max-width: 360px;
+  background: #fff;
+  color: #111827;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-102%);
+  transition: transform .25s ease;
+  box-shadow: 6px 0 18px rgba(0,0,0,.2);
+  z-index: 120;
+}
+.mobileOpen { transform: translateX(0); }
+
+.mobileHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.brandMobile {
+  font-weight: 800;
+  color: #004080;
+  font-size: 1.05rem;
+}
+.close {
+  background: transparent;
+  color: #111827;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
 }
 
-@media (max-width: 768px) {
-  .menu {
-    gap: 1rem;
-  }
-  .brand {
-    font-size: 1.2rem;
-  }
+.menuMobile {
+  list-style: none;
+  padding: 12px 16px;
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.menuMobile a {
+  color: #111827;
+}
+.menuMobile a:hover {
+  color: #004080;
+}
+
+.mobileSession {
+  margin-top: auto;
+  padding: 14px 16px 18px;
+  border-top: 1px solid #e5e7eb;
+}
+.userMobile {
+  font-size: .95rem;
+  margin-bottom: 10px;
+  color: #374151;
+}
+.btnFull {
+  width: 100%;
+}
+
+/* ---------- BREAKPOINT DESKTOP ---------- */
+@media (min-width: 992px) {
+  .burger { display: none; }
+  .menuDesktop { display: flex; }
+  .session { display: flex; }
+  .brand { font-size: 1.35rem; }
 }

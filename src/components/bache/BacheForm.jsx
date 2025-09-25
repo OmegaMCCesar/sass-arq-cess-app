@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import BacheImageGenerator from "./BacheImageGenerator";
+import styles from "../../styles/BacheForm.module.css";
 
 /* Helpers locales para área previa */
 function polygonAreaMeters(vertices = []) {
@@ -45,21 +46,16 @@ export default function BacheForm({
   coords,
   locating,
   onGetLocation,
-
-  // badges de autocompletado
   autoFilledCalle,
   setAutoFilledCalle,
   autoFilledEntre,
   setAutoFilledEntre,
+  isSubmitting,   
 }) {
-  // Medidas: una por línea. Acepta "2,5" o "2.5"
   const medidas = useMemo(() => {
     return (data.medidasText || "")
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean)
-      .map((n) => parseFloat(n.replace(",", ".")))
-      .filter((v) => !isNaN(v));
+      .split("\n").map((s) => s.trim()).filter(Boolean)
+      .map((n) => parseFloat(n.replace(",", "."))).filter((v) => !isNaN(v));
   }, [data.medidasText]);
 
   const verts = useMemo(() => {
@@ -94,72 +90,53 @@ export default function BacheForm({
   const canSubmit = Boolean(verts && coords);
 
   return (
-    <form
-      onSubmit={onSubmit}
-      style={{ border: "1px solid #ddd", padding: 12, borderRadius: 8, marginTop: 10 }}
-    >
-      <style>{`
-        .spinner {
-          width: 16px; height: 16px; border: 2px solid #ddd; border-top-color: #333;
-          border-radius: 50%; display: inline-block; animation: spin 0.8s linear infinite; margin-left: 8px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        .badge {
-          display: inline-block; margin-left: 6px; padding: 2px 6px; font-size: 11px;
-          border-radius: 999px; background: #eef6ff; color: #0366d6; border: 1px solid #c8e1ff;
-        }
-        .input-row {
-          display: flex; align-items: center; gap: 8px;
-        }
-        .input-row input {
-          flex: 1;
-        }
-      `}</style>
-
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
-        {/* Lado izquierdo: datos del bache */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <label>
+    <form onSubmit={onSubmit} className={styles.form}>
+      <div className={styles.grid}>
+        {/* IZQ: datos */}
+        <div className={styles.left}>
+          <label className={styles.label}>
             Calle principal
-            <div className="input-row">
+            <div className={styles.inputRow}>
               <input
+                className={styles.input}
                 value={data.calle || ""}
                 onChange={(e) => {
                   onChange({ ...data, calle: e.target.value });
-                  if (autoFilledCalle) setAutoFilledCalle(false); // al editar, quitar badge
+                  if (autoFilledCalle) setAutoFilledCalle(false);
                 }}
                 placeholder="Av. Principal"
               />
-              {autoFilledCalle && <span className="badge">autocompletado</span>}
+              {autoFilledCalle && <span className={styles.badge}>autocompletado</span>}
             </div>
           </label>
 
-          <label>
+          <label className={styles.label}>
             Entre calles (separadas por coma)
-            <div className="input-row">
+            <div className={styles.inputRow}>
               <input
+                className={styles.input}
                 value={(Array.isArray(data.entreCalles) ? data.entreCalles : []).join(", ")}
                 onChange={(e) => {
                   onChange({
                     ...data,
                     entreCalles: e.target.value.split(",").map((s) => s.trim()).filter(Boolean),
                   });
-                  if (autoFilledEntre) setAutoFilledEntre(false); // al editar, quitar badge
+                  if (autoFilledEntre) setAutoFilledEntre(false);
                 }}
                 placeholder="Calle 1, Calle 2"
               />
-              {autoFilledEntre && <span className="badge">autocompletado</span>}
+              {autoFilledEntre && <span className={styles.badge}>autocompletado</span>}
             </div>
           </label>
 
-          {/* Medidas por línea */}
-          <label style={{ gridColumn: "1 / span 2" }}>
+          <label className={styles.label} style={{ gridColumn: "1 / -1" }}>
             Medidas (una por línea).
-            <div style={{ fontSize: 12, opacity: 0.8, margin: "4px 0" }}>
-              • Con <strong>3</strong>: triángulo → <code>[baseTop, hRight, hLeft]</code><br/>
+            <div className={styles.help}>
+              • Con <strong>3</strong>: triángulo → <code>[baseTop, hRight, hLeft]</code><br />
               • Con <strong>4</strong>: trapecio → <code>[wTop, hRight, wBottom, hLeft]</code>
             </div>
             <textarea
+              className={styles.textarea}
               rows={6}
               placeholder={"Triángulo:\n3\n2\n2\n\nTrapecio:\n2\n3\n5\n3"}
               value={data.medidasText || ""}
@@ -167,36 +144,38 @@ export default function BacheForm({
             />
           </label>
 
-          {/* Selector de banqueta/guarnición */}
-          <label style={{ gridColumn: "1 / span 2" }}>
+          <label className={styles.label} style={{ gridColumn: "1 / -1" }}>
             Lado pegado a banqueta/guarnición (opcional)
             <select
+              className={styles.select}
               value={data.curbSide || ""}
               onChange={(e) => onChange({ ...data, curbSide: e.target.value })}
             >
-              {curbOptions.map(opt => (
+              {curbOptions.map((opt) => (
                 <option key={opt.v} value={opt.v}>{opt.t}</option>
               ))}
             </select>
           </label>
 
-          {/* Ubicación con botón manual + spinner */}
-          <div style={{ gridColumn: "1 / span 2", display: "flex", alignItems: "center", gap: 10 }}>
-            <button type="button" onClick={onGetLocation} disabled={!isGeolocationAvailable || locating}>
+          <div className={styles.locRow}>
+            <button
+              type="button"
+              className={styles.btn}
+              onClick={onGetLocation}
+              disabled={!isGeolocationAvailable || locating}
+            >
               {locating ? "Obteniendo ubicación..." : "Obtener ubicación"}
             </button>
-            {locating && <span className="spinner" />}
+            {locating && <span className={styles.spinner} />}
             <span style={{ fontSize: 12 }}>
-              Estado ubicación:{" "}
-              {!isGeolocationAvailable ? "no disponible" :
-                !isGeolocationEnabled ? "deshabilitada" :
-                  coords ? `OK (${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)})` :
-                    locating ? "buscando..." : "pendiente"}
+              {!isGeolocationAvailable ? "GPS no disponible" :
+               !isGeolocationEnabled ? "Permiso deshabilitado" :
+               coords ? `OK (${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)})` :
+               locating ? "buscando..." : "pendiente"}
             </span>
           </div>
 
-          {/* Área estimada */}
-          <div style={{ gridColumn: "1 / span 2", fontSize: 14 }}>
+          <div className={styles.areaText}>
             {verts ? (
               <span><strong>Área estimada:</strong> {area.toFixed(2)} m²</span>
             ) : (
@@ -204,14 +183,19 @@ export default function BacheForm({
             )}
           </div>
 
-          <button type="submit" style={{ marginTop: 10 }} disabled={!canSubmit}>
-            {canSubmit ? "Agregar bache" : "Agrega medidas y ubicación para continuar"}
-          </button>
+           <button
+      className={`${styles.btn} ${styles.submit}`}
+      type="submit"
+      disabled={!Boolean(verts && coords) || isSubmitting}
+    >
+      {isSubmitting ? "Guardando..." :
+        (Boolean(verts && coords) ? "Agregar bache" : "Agrega medidas y ubicación para continuar")}
+    </button>
         </div>
 
-        {/* Lado derecho: vista previa 2D */}
+        {/* DER: vista previa */}
         <div>
-          <div style={{ fontWeight: 600, marginBottom: 6 }}>Vista previa (2D)</div>
+          <div className={styles.previewTitle}>Vista previa (2D)</div>
           <BacheImageGenerator
             forma="irregular"
             medidas={medidas}
@@ -219,7 +203,7 @@ export default function BacheForm({
             width={420}
             height={420}
           />
-          <div style={{ fontSize: 12, opacity: 0.7, marginTop: 6 }}>
+          <div className={styles.previewHint}>
             * El borde punteado indica el lado contiguo a la banqueta/guarnición.
           </div>
         </div>
