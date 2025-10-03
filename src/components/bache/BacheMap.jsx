@@ -6,6 +6,7 @@ import {
   Popup,
   Polygon,
   Polyline,
+  ZoomControl,
   useMap,
 } from "react-leaflet";
 import L from "leaflet";
@@ -85,7 +86,7 @@ function FlyToSelected({ id, baches }) {
     const b = baches.find((x) => x.id === id);
     const c = b?.coordenadas;
     if (!c) return;
-    map.flyTo([c.lat, c.lng], 18, { animate: true, duration: 0.6 });
+    map.flyTo([c.lat, c.lng], 20, { animate: true, duration: 0.6 });
   }, [id, baches, map]);
   return null;
 }
@@ -97,6 +98,33 @@ function makeNumberIcon(n, highlight) {
     iconAnchor: [15, 34],
     popupAnchor: [0, -30],
   });
+}
+
+/** Control Leaflet para centrar en la ubicación del usuario */
+function CenterControl({ userCoords }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!userCoords) return;
+
+    const control = L.control({ position: "bottomleft" });
+    control.onAdd = () => {
+      const btn = L.DomUtil.create("button", styles.centerBtn);
+      btn.type = "button";
+      btn.innerText = "Ir a mi ubicación";
+      btn.onclick = () => {
+        map.flyTo([userCoords.lat, userCoords.lng], 20, { animate: true, duration: 0.5 });
+      };
+      // Evitar que el mapa capture el drag/scroll cuando se usa el botón
+      L.DomEvent.disableClickPropagation(btn);
+      L.DomEvent.disableScrollPropagation(btn);
+      return btn;
+    };
+    control.addTo(map);
+    return () => {
+      try { control.remove(); } catch {}
+    };
+  }, [map, userCoords]);
+  return null;
 }
 
 export default function BacheMap({
@@ -123,12 +151,7 @@ export default function BacheMap({
   const MoveBanner = ({ active }) => {
     if (!active) return null;
     return (
-      <div style={{
-        position: "absolute", left: 12, top: 12, zIndex: 1000,
-        background: "#fff7ed", color: "#92400e",
-        border: "1px solid #f59e0b", borderRadius: 8,
-        padding: "6px 10px", fontWeight: 600, boxShadow: "0 2px 8px rgba(0,0,0,.15)"
-      }}>
+      <div className={styles.moveBanner}>
         Modo mover: arrastra el pin y suéltalo para guardar
       </div>
     );
@@ -137,11 +160,28 @@ export default function BacheMap({
   return (
     <div className={styles.mapWrap}>
       <MoveBanner active={Boolean(movingBacheId)} />
-      <MapContainer center={center} zoom={15} style={{ height: "100%", width: "100%" }}>
+
+      <MapContainer
+        center={center}
+        zoom={17}
+        minZoom={3}
+        maxZoom={22}
+        zoomControl={false}
+        scrollWheelZoom={true}
+        doubleClickZoom={true}
+        zoomSnap={0.25}
+        zoomDelta={0.25}
+        style={{ height: "100%", width: "100%" }}
+      >
+        <ZoomControl position="topright" />
         <TileLayer
           attribution='&copy; OpenStreetMap'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxZoom={22}
         />
+
+        {/* Control personalizado DENTRO del MapContainer */}
+        <CenterControl userCoords={userCoords} />
 
         <FitOnData baches={baches} user={userCoords} />
         <FlyToSelected id={selectedBacheId} baches={baches} />
