@@ -19,7 +19,7 @@ import {
 
 import { enqueue, processQueue, onOnline } from "../../utils/offlineQueue";
 
-// --- Helpers geométricos locales ---
+/* ===== Helpers geométricos ===== */
 function polygonAreaMeters(vertices = []) {
   if (!Array.isArray(vertices) || vertices.length < 3) return 0;
   let s = 0;
@@ -54,6 +54,7 @@ function verticesFromMedidas3(m) {
   ];
 }
 
+/* ============================== Componente ============================== */
 export default function BachesPage() {
   const { user, role } = useAuth();
   const canSeeAll = useMemo(() => ["admin", "superadmin"].includes(role), [role]);
@@ -89,11 +90,10 @@ export default function BachesPage() {
   const [err, setErr] = useState("");
 
   const [selectedBacheId, setSelectedBacheId] = useState(null);
-
-  // evita duplicados por doble click
+  const [movingBacheId, setMovingBacheId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Botón "Obtener ubicación"
+  /* Ubicación (botón) */
   const onGetLocation = useCallback(() => {
     if (!isGeolocationAvailable) return;
     setLocating(true);
@@ -103,7 +103,7 @@ export default function BachesPage() {
     }, 15000);
   }, [getPosition, isGeolocationAvailable, coords, positionError]);
 
-  // coords -> autollenado
+  /* Autorrelleno calle/entreCalles */
   useEffect(() => {
     if (!coords) return;
     setLocating(false);
@@ -113,8 +113,10 @@ export default function BachesPage() {
         const calle = result?.calle || "";
         const entre = Array.isArray(result?.entreCalles)
           ? result.entreCalles.filter(Boolean)
-          : (result?.entreCalles ? String(result.entreCalles).split(",").map(s => s.trim()).filter(Boolean) : []);
-        setBacheData(prev => ({
+          : (result?.entreCalles
+              ? String(result.entreCalles).split(",").map((s) => s.trim()).filter(Boolean)
+              : []);
+        setBacheData((prev) => ({
           ...prev,
           calle: calle || prev.calle || "",
           entreCalles: (entre.length ? entre : prev.entreCalles) || [],
@@ -131,13 +133,14 @@ export default function BachesPage() {
     setErr(positionError.message || "No se pudo obtener la ubicación.");
   }, [positionError]);
 
+  /* Listado */
   const refresh = useCallback(async () => {
     if (!user) return;
     setLoading(true); setErr(""); setMsg("");
     try {
       const data = canSeeAll ? await listAllBaches() : await listBachesByResidente(user.uid);
       setRows(data);
-      setSelectedBacheId(prev => (data.some(d => d.id === prev) ? prev : null));
+      setSelectedBacheId((prev) => (data.some((d) => d.id === prev) ? prev : null));
     } catch (e) {
       console.error(e);
       setErr("No se pudieron cargar los baches.");
@@ -148,13 +151,12 @@ export default function BachesPage() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Procesar cola al volver online
+  /* Cola offline */
   useEffect(() => {
     const off = onOnline(async () => {
       await processQueue({
         create: async (payload) => {
           const { id: newId } = await createBache(payload);
-          // opcional: podrías reconciliar tempIds aquí
           return newId;
         },
         update: async (payload) => {
@@ -169,25 +171,31 @@ export default function BachesPage() {
     return off;
   }, [refresh]);
 
-  // Numeración visual
-  const numberedRows = useMemo(() => rows.map((r, i) => ({ ...r, idx: i + 1 })), [rows]);
+  /* Numeración visual */
+  const numberedRows = useMemo(
+    () => rows.map((r, i) => ({ ...r, idx: i + 1 })),
+    [rows]
+  );
 
+  /* Utils */
   function nextNoBacheForStreet(calle) {
-    const list = rows.filter(r => (r.calle || "").trim().toLowerCase() === (calle || "").trim().toLowerCase());
-    const nums = list.map(r => Number(r.noBache) || 0);
+    const list = rows.filter(
+      (r) => (r.calle || "").trim().toLowerCase() === (calle || "").trim().toLowerCase()
+    );
+    const nums = list.map((r) => Number(r.noBache) || 0);
     return (nums.length ? Math.max(...nums) : 0) + 1;
   }
   function parseMedidas(text) {
     return (text || "")
-      .split("\n").map(s => s.trim()).filter(Boolean)
-      .map(n => parseFloat(n.replace(",", "."))).filter(v => !isNaN(v));
+      .split("\n").map((s) => s.trim()).filter(Boolean)
+      .map((n) => parseFloat(n.replace(",", "."))).filter((v) => !isNaN(v));
   }
 
+  /* Crear */
   const onCreate = async (e) => {
     e.preventDefault();
-    if (isSubmitting) return;            // guard anti-doble click
+    if (isSubmitting) return;
     setIsSubmitting(true);
-
     setErr(""); setMsg("");
 
     if (!user) { setIsSubmitting(false); return setErr("Debes iniciar sesión."); }
@@ -209,26 +217,25 @@ export default function BachesPage() {
       area,
       medidas,
       curbSide: bacheData.curbSide || "",
-      coordenadas: { lat: coords.latitude, lng: coords.longitude },
+      coordenadas: { lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy || null },
       residenteUid: user.uid,
       noBache,
+      createdAt: new Date(),          // útil para filtros en cliente
+      pendingSync: !navigator.onLine, // marca local
     };
 
-    const isOnline = navigator.onLine;
-
     try {
-      if (isOnline) {
+      if (navigator.onLine) {
         await createBache(payload);
         setMsg(`Bache #${noBache} creado en ${bacheData.calle || "calle"}.`);
         refresh();
       } else {
-        // UI optimista + cola
         const tempId = `temp_${Date.now()}`;
-        setRows(prev => [...prev, { id: tempId, ...payload }]);
+        setRows((prev) => [...prev, { id: tempId, ...payload }]);
         enqueue({ type: "create", payload });
         setMsg("Bache en cola para sincronizar (offline).");
       }
-      setBacheData(prev => ({ ...prev, medidasText: "", curbSide: "" }));
+      setBacheData((prev) => ({ ...prev, medidasText: "", curbSide: "" }));
       setAutoFilledCalle(false);
       setAutoFilledEntre(false);
     } catch (e2) {
@@ -239,21 +246,18 @@ export default function BachesPage() {
     }
   };
 
+  /* Eliminar */
   const onDelete = async (id) => {
     if (!id) return;
     const ok = window.confirm("¿Eliminar este bache? Esta acción no se puede deshacer.");
     if (!ok) return;
-
-    const isOnline = navigator.onLine;
-
     try {
-      if (isOnline) {
+      if (navigator.onLine) {
         await deleteBacheServer(id);
+        setRows((prev) => prev.filter((r) => r.id !== id));
         setMsg("Bache eliminado.");
-        setRows(prev => prev.filter(r => r.id !== id));
       } else {
-        // UI optimista + cola
-        setRows(prev => prev.filter(r => r.id !== id));
+        setRows((prev) => prev.filter((r) => r.id !== id));
         enqueue({ type: "delete", payloadId: id });
         setMsg("Eliminación en cola para sincronizar (offline).");
       }
@@ -263,52 +267,41 @@ export default function BachesPage() {
     }
   };
 
-  const onUpdateBache = async (id, payload) => {
-  // Aquí puedes añadir control de concurrencia/offline si quieres
-  await updateBacheServer(id, payload);
-  await refresh();
-};
-
+  /* Update genérico (edición inline + mover pin) */
   const onUpdateRow = async (id, partial) => {
-    // Recalcular si vienen medidas
-    let patch = { ...partial };
-    if (Array.isArray(partial.medidas)) {
-      const m = partial.medidas;
-      let verts = null;
-      if (m.length === 3) verts = verticesFromMedidas3(m);
-      else if (m.length >= 4) verts = verticesFromMedidas4(m);
-      if (verts) {
-        patch.vertices = verts;
-        patch.area = polygonAreaMeters(verts);
-      }
-    }
-
-    // UI optimista
-    setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
-
-    const isOnline = navigator.onLine;
+    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...partial, pendingSync: !navigator.onLine || r.pendingSync } : r)));
     try {
-      if (isOnline) {
-        await updateBacheServer(id, patch);
+      if (navigator.onLine) {
+        await updateBacheServer(id, partial);
         setMsg("Bache actualizado.");
       } else {
-        enqueue({ type: "update", payload: { id, partial: patch } });
+        enqueue({ type: "update", payload: { id, partial } });
         setMsg("Actualización en cola para sincronizar (offline).");
       }
     } catch (e) {
       console.error(e);
       setErr(e?.message || "No se pudo actualizar el bache.");
-      // opcional: revertir UI si falla
       refresh();
     }
   };
 
+  /* Mover pin en mapa */
+  const onRequestMove = (id) => {
+    setSelectedBacheId(id);
+    setMovingBacheId(id);
+  };
+  const handleMarkerDragEnd = async (id, lat, lng) => {
+    setMovingBacheId(null);
+    await onUpdateRow(id, { coordenadas: { lat, lng } });
+  };
+
+  /* Export */
   const handleExport = () => {
     exportToExcel(rows, "Reporte de Baches");
     setMsg("Exportando a Excel...");
   };
 
-  // Scroll a tarjeta SOLO cuando se pide explícitamente
+  /* Scroll explícito desde mapa */
   const onRequestScrollTo = (id) => {
     setSelectedBacheId(id);
     const el = document.getElementById(`bache-card-${id}`);
@@ -345,8 +338,10 @@ export default function BachesPage() {
               baches={numberedRows}
               userCoords={coords ? { lat: coords.latitude, lng: coords.longitude } : null}
               selectedBacheId={selectedBacheId}
-              onSelectBache={(id) => setSelectedBacheId(id)}     // solo resalta
-              onScrollToBache={onRequestScrollTo}                // botón explícito en popup
+              onSelectBache={(id) => setSelectedBacheId(id)}
+              onScrollToBache={onRequestScrollTo}
+              movingBacheId={movingBacheId}
+              onMarkerDragEnd={handleMarkerDragEnd}
             />
           </div>
           <div>
@@ -356,8 +351,8 @@ export default function BachesPage() {
               onDelete={onDelete}
               onUpdate={onUpdateRow}
               selectedBacheId={selectedBacheId}
-              onSelectBache={(id) => setSelectedBacheId(id)}     // resalta al clickear tarjeta
-              onUpdateBache={onUpdateBache}
+              onSelectBache={(id) => setSelectedBacheId(id)}
+              onRequestMove={onRequestMove}
             />
             <div className={styles.exportWrap}>
               <button className={`${styles.btn} ${styles.btnGhost}`} onClick={handleExport}>

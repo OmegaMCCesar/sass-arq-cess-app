@@ -1,49 +1,44 @@
+/* ========================================================= */
+/* === BASE (Móvil) / Estilos generales y de tipografía === */
+/* ========================================================= */
+
 .form {
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   padding: 12px;
-  background: #fff;
+  background: hsl(0, 50%, 48%); /* Color de fondo del formulario */
   margin-top: 10px;
+  width: 100%;
+  overflow: hidden;
 }
 
 .grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr; /* Móvil: 1 columna, apilado */
   align-items: start;
-}
-@media (min-width: 980px) {
-  .grid {
-    grid-template-columns: 1fr 1fr;
-  }
+  padding: 1vh;
 }
 
 .left {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr; /* Móvil: Los campos se apilan en una sola columna */
   gap: 12px;
+  min-width: 0;
+  padding: 1vh;
 }
 
-.label {
-  font-size: 0.9rem;
-  color: #111827;
-  display: block;
-}
-
-.inputRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
+/* 🟢 Estilos para todos los campos de entrada */
 .input, .select, .textarea {
   width: 100%;
+  min-width: 0; /* Clave: permite que los inputs se reduzcan en layouts flexibles */
   border: 1px solid #d1d5db;
   border-radius: 8px;
   padding: 10px 12px;
   font-size: 0.95rem;
   outline: none;
   background: #fff;
+  box-sizing: border-box; /* Asegura que el padding no fuerce el ancho */
 }
 .input:focus, .select:focus, .textarea:focus {
   border-color: #1a47ff;
@@ -51,37 +46,48 @@
 }
 
 .textarea {
-  min-height: 120px;
+  min-height: 120px; /* Suficiente altura en móvil */
   resize: vertical;
 }
 
+/* 🟢 Estilos de filas y etiquetas */
+.label { 
+  display: block; 
+  font-size: 0.9rem; 
+  color: #111827; 
+}
+.inputRow { 
+  display: flex; 
+  align-items: center; 
+  gap: 8px; 
+  min-width: 0; 
+}
+
+/* 🟢 Elementos auxiliares */
 .badge {
   display: inline-block;
-  margin-left: 6px;
   padding: 2px 6px;
   font-size: 11px;
   border-radius: 999px;
   background: #eef6ff;
   color: #0366d6;
   border: 1px solid #c8e1ff;
+  flex-shrink: 0; /* Evita que el badge se comprima */
 }
-
 .help {
   font-size: 12px;
   opacity: .8;
   margin: 4px 0 8px;
 }
-
-.locRow {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
+.locRow, .areaText, .submit {
+  grid-column: 1 / -1; /* Ocupan todo el ancho en el grid .left */
 }
 
+/* 🟢 Botones */
 .btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   padding: 10px 14px;
   border-radius: 8px;
@@ -96,28 +102,65 @@
 .btn:hover:not(:disabled) { box-shadow: 0 4px 14px rgba(0,0,0,.15); }
 .btn:active:not(:disabled) { transform: translateY(1px); }
 
-.spinner {
-  width: 16px; height: 16px; border: 2px solid #e5e7eb; border-top-color: #111827;
-  border-radius: 50%; display: inline-block; animation: spin .8s linear infinite; margin-left: 2px;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.areaText {
-  grid-column: 1 / -1;
-  font-size: 0.92rem;
-}
-
+/* Estilo específico para el botón principal de submit */
 .submit {
   margin-top: 8px;
+  width: 100%; /* Ocupa el 100% del ancho en móvil */
 }
 
+/* 🟢 Vista previa (Preview) - CLAVE RESPONSIVE */
+.grid > div:last-child {
+  display: flex;
+  flex-direction: column;
+  align-items: center; /* Centra el preview en el móvil */
+  width: 100%;
+}
 .previewTitle {
   font-weight: 700;
   margin-bottom: 6px;
 }
-
 .previewHint {
   font-size: 12px;
   opacity: .7;
   margin-top: 6px;
+}
+
+/* Estilos para el <canvas> generado por BacheImageGenerator */
+.grid canvas {
+  width: 100%; /* Ocupa todo el ancho disponible */
+  height: auto; /* Mantiene la proporción */
+  max-width: 420px; /* Limita el tamaño en pantallas muy anchas si no se ve bien */
+  aspect-ratio: 1 / 1; /* Mantiene la proporción cuadrada 1:1 */
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
+
+/* ========================================================= */
+/* === DESKTOP (PC) === */
+/* ========================================================= */
+
+@media (min-width: 980px) {
+  /* En PC, dividimos el formulario en dos columnas: Datos (izquierda) y Preview (derecha) */
+  .grid {
+    grid-template-columns: 3fr 2fr; /* 60% para datos, 40% para preview */
+    padding: 2vh;
+  }
+
+  /* El contenido de la izquierda lo dividimos en 2 columnas (Calle/EntreCalles) */
+  .left {
+    grid-template-columns: 1fr 1fr; 
+    padding: 2vh;
+  }
+  
+  /* Alineamos la vista previa a la izquierda en PC */
+  .grid > div:last-child {
+    align-items: flex-start; 
+  }
+
+  /* El botón de submit puede ser más corto para no estorbar el layout */
+  .submit {
+    width: auto;
+    justify-self: flex-start; /* Se alinea a la izquierda en PC */
+  }
 }

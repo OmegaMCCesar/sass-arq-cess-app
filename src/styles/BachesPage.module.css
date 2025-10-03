@@ -32,7 +32,7 @@
 .card {
   border: 1px solid #e5e7eb;
   border-radius: 10px;
-  background: #fff;
+  background: hsl(120, 87%, 37%);
   overflow: hidden;
 }
 
