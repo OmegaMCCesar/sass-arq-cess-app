@@ -64,6 +64,7 @@ export default function BacheList({
   selectedBacheId,
   onSelectBache,
   onRequestMove,     // activa modo mover en mapa
+  onRequestMapFocus, // 👈 NUEVO: desplazar la página hacia el mapa
 }) {
   const [editId, setEditId] = useState(null);
   const [savingId, setSavingId] = useState(null);
@@ -190,7 +191,6 @@ export default function BacheList({
 
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-                <span className={styles.badgeNum}>{r.idx}</span>
                 <strong>#{r.noBache}</strong>
                 {!isEditing ? (
                   <>
@@ -215,7 +215,14 @@ export default function BacheList({
                   </div>
 
                   <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button className={styles.del} onClick={() => onSelectBache && onSelectBache(r.id)} title="Ver en mapa">
+                    <button
+                      className={styles.del}
+                      onClick={() => {
+                        onSelectBache && onSelectBache(r.id);
+                        onRequestMapFocus && onRequestMapFocus(r.id); // 👈 baja al mapa
+                      }}
+                      title="Ver en mapa"
+                    >
                       Ver en mapa
                     </button>
                     <button

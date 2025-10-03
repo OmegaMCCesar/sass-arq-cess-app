@@ -13,16 +13,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import styles from "../../styles/BacheMap.module.css";
 
-delete L.Icon.Default.prototype._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
-  iconUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
-  shadowUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
-});
-
+/* ========= Helpers de geometría/render ========= */
 function centroidOf(vertices) {
   let a = 0, cx = 0, cy = 0;
   const n = vertices.length;
@@ -43,25 +34,30 @@ function centroidOf(vertices) {
   cy /= (6 * a);
   return { x: cx, y: cy };
 }
-function localMetersToLatLng(vertices, centerLat, centerLng) {
+
+/* shrinkFactor: reduce el polígono solo visualmente (no toca tus datos) */
+function localMetersToLatLng(vertices, centerLat, centerLng, shrinkFactor = 1) {
   const centroid = centroidOf(vertices);
   const mPerDegLat = 111320;
   const mPerDegLng = 111320 * Math.cos((centerLat * Math.PI) / 180);
   return vertices.map((v) => {
-    const dx = v.x - centroid.x; // +x => +lng
-    const dy = v.y - centroid.y; // +y => -lat
+    let dx = v.x - centroid.x;
+    let dy = v.y - centroid.y;
+    dx *= shrinkFactor;
+    dy *= shrinkFactor;
     const dLat = -(dy / mPerDegLat);
     const dLng = dx / mPerDegLng;
     return [centerLat + dLat, centerLng + dLng];
   });
 }
-function collectBounds(baches, userCoords) {
+
+function collectBounds(baches, userCoords, shrink) {
   const latlngs = [];
   for (const b of baches || []) {
     const c = b?.coordenadas;
     if (!c) continue;
     if (Array.isArray(b.vertices) && b.vertices.length >= 3) {
-      localMetersToLatLng(b.vertices, c.lat, c.lng).forEach((p) => latlngs.push(p));
+      localMetersToLatLng(b.vertices, c.lat, c.lng, shrink).forEach((p) => latlngs.push(p));
     } else {
       latlngs.push([c.lat, c.lng]);
     }
@@ -69,16 +65,18 @@ function collectBounds(baches, userCoords) {
   if (userCoords) latlngs.push([userCoords.lat, userCoords.lng]);
   return latlngs;
 }
-function FitOnData({ baches, user }) {
+
+function FitOnData({ baches, user, shrink }) {
   const map = useMap();
   useEffect(() => {
-    const pts = collectBounds(baches, user);
+    const pts = collectBounds(baches, user, shrink);
     if (!pts.length) return;
     const bounds = L.latLngBounds(pts);
     if (bounds.isValid()) map.fitBounds(bounds.pad(0.2));
-  }, [baches, user, map]);
+  }, [baches, user, shrink, map]);
   return null;
 }
+
 function FlyToSelected({ id, baches }) {
   const map = useMap();
   useEffect(() => {
@@ -90,22 +88,12 @@ function FlyToSelected({ id, baches }) {
   }, [id, baches, map]);
   return null;
 }
-function makeNumberIcon(n, highlight) {
-  return L.divIcon({
-    className: "bache-marker",
-    html: `<div class="${styles.markerPin} ${highlight ? styles.markerPinSel : ""}">${n}</div>`,
-    iconSize: [30, 38],
-    iconAnchor: [15, 34],
-    popupAnchor: [0, -30],
-  });
-}
 
 /** Control Leaflet para centrar en la ubicación del usuario */
 function CenterControl({ userCoords }) {
   const map = useMap();
   useEffect(() => {
     if (!userCoords) return;
-
     const control = L.control({ position: "bottomleft" });
     control.onAdd = () => {
       const btn = L.DomUtil.create("button", styles.centerBtn);
@@ -114,27 +102,50 @@ function CenterControl({ userCoords }) {
       btn.onclick = () => {
         map.flyTo([userCoords.lat, userCoords.lng], 20, { animate: true, duration: 0.5 });
       };
-      // Evitar que el mapa capture el drag/scroll cuando se usa el botón
       L.DomEvent.disableClickPropagation(btn);
       L.DomEvent.disableScrollPropagation(btn);
       return btn;
     };
     control.addTo(map);
-    return () => {
-      try { control.remove(); } catch {}
-    };
+    return () => { try { control.remove(); } catch {} };
   }, [map, userCoords]);
   return null;
 }
+
+/* ========= Iconos tipo pin por color (SVG data URL) ========= */
+function makeColoredPin(color = "#1a47ff") {
+  const svg = encodeURIComponent(`
+    <svg width="25" height="41" viewBox="0 0 25 41" xmlns="http://www.w3.org/2000/svg">
+      <path fill="${color}" d="M12.5 0C5.6 0 0 5.6 0 12.5 0 21.9 12.5 41 12.5 41S25 21.9 25 12.5C25 5.6 19.4 0 12.5 0z"/>
+      <circle cx="12.5" cy="12.5" r="5.5" fill="#fff"/>
+    </svg>
+  `);
+  return L.icon({
+    iconUrl: `data:image/svg+xml;charset=UTF-8,${svg}`,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+    popupAnchor: [0, -36],
+    shadowUrl:
+      "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+    shadowSize: [41, 41],
+    shadowAnchor: [13, 41],
+  });
+}
+
+const ICON_NORMAL = makeColoredPin("#3B82F6");   // azul
+const ICON_SELECTED = makeColoredPin("#111827"); // gris muy oscuro
+const ICON_MOVING = makeColoredPin("#E11D48");   // rojo/rose
 
 export default function BacheMap({
   baches = [],
   userCoords = null,
   selectedBacheId = null,
   onSelectBache,
-  onScrollToBache,
-  movingBacheId = null,
+  onScrollToBache,      // <- usar para "Ver en lista"
+  movingBacheId = null, // <- el que se está moviendo
   onMarkerDragEnd,
+  shrinkFactor = 0.75,
+  usePinMarkers = true, // ya no se usa, mantenido por compat
 }) {
   const points = useMemo(() => {
     return (baches || [])
@@ -152,7 +163,7 @@ export default function BacheMap({
     if (!active) return null;
     return (
       <div className={styles.moveBanner}>
-        Modo mover: arrastra el pin y suéltalo para guardar
+        Modo mover: arrastra el pin rojo y suéltalo para guardar
       </div>
     );
   };
@@ -180,21 +191,24 @@ export default function BacheMap({
           maxZoom={22}
         />
 
-        {/* Control personalizado DENTRO del MapContainer */}
         <CenterControl userCoords={userCoords} />
-
-        <FitOnData baches={baches} user={userCoords} />
+        <FitOnData baches={baches} user={userCoords} shrink={shrinkFactor} />
         <FlyToSelected id={selectedBacheId} baches={baches} />
 
         {baches.map((b) => {
           const c = b?.coordenadas;
           if (!c) return null;
 
+          const isMoving = movingBacheId === b.id;
+          const isSelected = selectedBacheId === b.id;
+
+          // polígonos (más pequeños visualmente)
           let polyLatLngs = null;
           if (Array.isArray(b.vertices) && b.vertices.length >= 3) {
-            polyLatLngs = localMetersToLatLng(b.vertices, c.lat, c.lng);
+            polyLatLngs = localMetersToLatLng(b.vertices, c.lat, c.lng, shrinkFactor);
           }
 
+          // banqueta/guarnición (si aplica)
           let curbEdgeLatLngs = null;
           if (polyLatLngs && b.curbSide) {
             const edges3 = [
@@ -217,25 +231,33 @@ export default function BacheMap({
             }
           }
 
-          const isMoving = movingBacheId === b.id;
-          const selected = selectedBacheId === b.id;
-          const icon = makeNumberIcon(b.idx, selected || isMoving);
+          // icono por estado
+          const icon = isMoving ? ICON_MOVING : (isSelected ? ICON_SELECTED : ICON_NORMAL);
+          const zIndex = isMoving ? 1000 : (isSelected ? 900 : 800);
 
           return (
             <React.Fragment key={b.id || `${c.lat}-${c.lng}`}>
               {polyLatLngs && (
                 <Polygon
                   positions={polyLatLngs}
-                  pathOptions={{ color: selected ? "#111" : "#1a47ff", weight: selected ? 3 : 2, fillOpacity: 0.2 }}
+                  pathOptions={{
+                    color: isMoving ? "#E11D48" : (isSelected ? "#111827" : "#1a47ff"),
+                    weight: isMoving || isSelected ? 3 : 1.5,
+                    fillOpacity: 0.12,
+                  }}
                 />
               )}
               {curbEdgeLatLngs && (
-                <Polyline positions={curbEdgeLatLngs} pathOptions={{ color: "#6b7280", weight: selected ? 6 : 4, dashArray: "8,6" }} />
+                <Polyline
+                  positions={curbEdgeLatLngs}
+                  pathOptions={{ color: "#6b7280", weight: isMoving || isSelected ? 4 : 3, dashArray: "8,6" }}
+                />
               )}
               <Marker
                 position={[c.lat, c.lng]}
                 icon={icon}
                 draggable={isMoving}
+                zIndexOffset={zIndex}
                 eventHandlers={{
                   click: () => onSelectBache && onSelectBache(b.id),
                   dragend: (e) => {
@@ -264,7 +286,7 @@ export default function BacheMap({
         })}
 
         {userCoords && (
-          <Marker position={[userCoords.lat, userCoords.lng]}>
+          <Marker position={[userCoords.lat, userCoords.lng]} icon={makeColoredPin("#16A34A")}>
             <Popup>Estás aquí</Popup>
           </Marker>
         )}

@@ -87,15 +87,15 @@ input, select {
 }
 
 .delete {
-  background: #e74c3c;
-  color: white;
+  background: hsl(0, 4%, 95%);
+  color: #eaeaea;
   border: none;
   padding: 0.2rem 0.4rem;
   cursor: pointer;
   border-radius: 4px;
 }
 .delete:hover {
-  background: #c0392b;
+  background: hsl(9, 64%, 98%);
 }
 
 .main {

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { useAuth } from "../../hooks/useAuth";
 import AppLayout from "../../components/layout/AppLayout";
 import BacheForm from "../../components/bache/BacheForm";
@@ -54,7 +54,6 @@ function verticesFromMedidas3(m) {
   ];
 }
 
-/* ============================== Componente ============================== */
 export default function BachesPage() {
   const { user, role } = useAuth();
   const canSeeAll = useMemo(() => ["admin", "superadmin"].includes(role), [role]);
@@ -92,6 +91,24 @@ export default function BachesPage() {
   const [selectedBacheId, setSelectedBacheId] = useState(null);
   const [movingBacheId, setMovingBacheId] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const mapCardRef = useRef(null);
+  const scrollToMap = useCallback(() => {
+    if (mapCardRef.current) {
+      mapCardRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, []);
+
+  /* 👉 NUEVO: scroll a la tarjeta en la lista */
+  const handleScrollToList = useCallback((id) => {
+    if (!id) return;
+    setSelectedBacheId(id);
+    // esperar al próximo tick por si la lista necesita pintar el “selected”
+    setTimeout(() => {
+      const el = document.getElementById(`bache-card-${id}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 0);
+  }, []);
 
   /* Ubicación (botón) */
   const onGetLocation = useCallback(() => {
@@ -171,13 +188,11 @@ export default function BachesPage() {
     return off;
   }, [refresh]);
 
-  /* Numeración visual */
   const numberedRows = useMemo(
     () => rows.map((r, i) => ({ ...r, idx: i + 1 })),
     [rows]
   );
 
-  /* Utils */
   function nextNoBacheForStreet(calle) {
     const list = rows.filter(
       (r) => (r.calle || "").trim().toLowerCase() === (calle || "").trim().toLowerCase()
@@ -220,8 +235,8 @@ export default function BachesPage() {
       coordenadas: { lat: coords.latitude, lng: coords.longitude, accuracy: coords.accuracy || null },
       residenteUid: user.uid,
       noBache,
-      createdAt: new Date(),          // útil para filtros en cliente
-      pendingSync: !navigator.onLine, // marca local
+      createdAt: new Date(),
+      pendingSync: !navigator.onLine,
     };
 
     try {
@@ -238,6 +253,8 @@ export default function BachesPage() {
       setBacheData((prev) => ({ ...prev, medidasText: "", curbSide: "" }));
       setAutoFilledCalle(false);
       setAutoFilledEntre(false);
+
+      scrollToMap();
     } catch (e2) {
       console.error(e2);
       setErr(e2?.message || "No se pudo crear el bache.");
@@ -267,7 +284,7 @@ export default function BachesPage() {
     }
   };
 
-  /* Update genérico (edición inline + mover pin) */
+  /* Update general (edición inline + mover pin) */
   const onUpdateRow = async (id, partial) => {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...partial, pendingSync: !navigator.onLine || r.pendingSync } : r)));
     try {
@@ -289,6 +306,7 @@ export default function BachesPage() {
   const onRequestMove = (id) => {
     setSelectedBacheId(id);
     setMovingBacheId(id);
+    scrollToMap();
   };
   const handleMarkerDragEnd = async (id, lat, lng) => {
     setMovingBacheId(null);
@@ -299,13 +317,6 @@ export default function BachesPage() {
   const handleExport = () => {
     exportToExcel(rows, "Reporte de Baches");
     setMsg("Exportando a Excel...");
-  };
-
-  /* Scroll explícito desde mapa */
-  const onRequestScrollTo = (id) => {
-    setSelectedBacheId(id);
-    const el = document.getElementById(`bache-card-${id}`);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   return (
@@ -333,15 +344,17 @@ export default function BachesPage() {
         {err && <p className={`${styles.flash} ${styles.flashError}`}>{err}</p>}
 
         <div className={styles.split}>
-          <div className={styles.card}>
+          <div className={styles.card} ref={mapCardRef} id="map-card">
             <BacheMap
               baches={numberedRows}
               userCoords={coords ? { lat: coords.latitude, lng: coords.longitude } : null}
               selectedBacheId={selectedBacheId}
               onSelectBache={(id) => setSelectedBacheId(id)}
-              onScrollToBache={onRequestScrollTo}
+              onScrollToBache={handleScrollToList} 
               movingBacheId={movingBacheId}
               onMarkerDragEnd={handleMarkerDragEnd}
+              shrinkFactor={0.75}
+              usePinMarkers
             />
           </div>
           <div>
@@ -353,6 +366,10 @@ export default function BachesPage() {
               selectedBacheId={selectedBacheId}
               onSelectBache={(id) => setSelectedBacheId(id)}
               onRequestMove={onRequestMove}
+              onRequestMapFocus={(id) => {
+                setSelectedBacheId(id);
+                scrollToMap();
+              }}
             />
             <div className={styles.exportWrap}>
               <button className={`${styles.btn} ${styles.btnGhost}`} onClick={handleExport}>
